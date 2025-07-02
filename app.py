@@ -17,6 +17,8 @@ index = pc.Index("addictiontube-index")
 def search_stories():
     query = request.args.get('q', '')
     category = request.args.get('category', '')
+    page = int(request.args.get('page', 1))
+    size = int(request.args.get('size', 5))
 
     if not query or not category:
         return jsonify({"error": "Missing query or category"}), 400
@@ -33,20 +35,21 @@ def search_stories():
     try:
         results = index.query(
             vector=query_embedding,
-            top_k=5,
+            top_k=100,
             include_metadata=True,
             filter={"category": {"$eq": category}}
         )
-        stories = [
-            {
-                "id": m.id,
-                "score": m.score,
-                "title": m.metadata.get("title", "N/A"),
-                "description": m.metadata.get("description", "")
-            }
-            for m in results.matches
-        ]
-        return jsonify(stories)
+        total = len(results.matches)
+        start = (page - 1) * size
+        end = start + size
+        paginated = results.matches[start:end]
+        stories = [{
+            "id": m.id,
+            "score": m.score,
+            "title": m.metadata.get("title", "N/A"),
+            "description": m.metadata.get("description", "")
+        } for m in paginated]
+        return jsonify({"results": stories, "total": total})
     except Exception as e:
         return jsonify({"error": "Pinecone query failed", "details": str(e)}), 500
 
