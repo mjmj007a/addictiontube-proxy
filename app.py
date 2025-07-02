@@ -18,7 +18,7 @@ def search_stories():
     query = request.args.get('q', '')
     category = request.args.get('category', '')
     page = int(request.args.get('page', 1))
-    size = int(request.args.get('size', 5))
+    size = int(request.args.get('per_page', 5))  # ✅ Fixed: matches front-end param
 
     if not query or not category:
         return jsonify({"error": "Missing query or category"}), 400
@@ -43,7 +43,7 @@ def search_stories():
         start = (page - 1) * size
         end = start + size
         paginated = results.matches[start:end]
-        stories = [{
+        stories = [ {
             "id": m.id,
             "score": m.score,
             "title": m.metadata.get("title", "N/A"),
@@ -52,6 +52,7 @@ def search_stories():
         return jsonify({"results": stories, "total": total})
     except Exception as e:
         return jsonify({"error": "Pinecone query failed", "details": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
