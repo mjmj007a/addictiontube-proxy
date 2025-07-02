@@ -1,0 +1,54 @@
+from flask import Flask, request, jsonify
+from pinecone import Pinecone
+import openai
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+app = Flask(__name__)
+
+# Load credentials from environment
+openai.api_key = os.getenv("OPENAI_API_KEY")
+pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+index = pc.Index("addictiontube-index")
+
+@app.route('/search_stories', methods=['GET'])
+def search_stories():
+    query = request.args.get('q', '')
+    category = request.args.get('category', '')
+
+    if not query or not category:
+        return jsonify({"error": "Missing query or category"}), 400
+
+    try:
+        embedding_response = openai.embeddings.create(
+            input=query,
+            model="text-embedding-ada-002"
+        )
+        query_embedding = embedding_response.data[0].embedding
+    except Exception as e:
+        return jsonify({"error": "OpenAI embedding failed", "details": str(e)}), 500
+
+    try:
+        results = index.query(
+            vector=query_embedding,
+            top_k=5,
+            include_metadata=True,
+            filter={"category": {"$eq": category}}
+        )
+        stories = [
+            {
+                "id": m.id,
+                "score": m.score,
+                "title": m.metadata.get("title", "N/A"),
+                "description": m.metadata.get("description", "")
+            }
+            for m in results.matches
+        ]
+        return jsonify(stories)
+    except Exception as e:
+        return jsonify({"error": "Pinecone query failed", "details": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)

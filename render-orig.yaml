@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: pinecone-proxy
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: OPENAI_API_KEY
+        value: your-openai-key
+      - key: PINECONE_API_KEY
+        value: your-pinecone-key

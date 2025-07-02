@@ -1,0 +1,5 @@
+flask
+pinecone
+openai
+python-dotenv
+gunicorn
