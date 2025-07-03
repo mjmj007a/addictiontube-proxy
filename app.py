@@ -3,16 +3,20 @@ from flask_cors import CORS
 from pinecone import Pinecone
 import openai
 import os
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)  # ✅ Fixes your CORS error
+CORS(app)
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("addictiontube-index")
+
+def strip_html(text):
+    return re.sub(r'<[^>]+>', '', text or '')
 
 @app.route('/search_stories', methods=['GET'])
 def search_stories():
@@ -79,10 +83,13 @@ def rag_answer():
             filter={"category": {"$eq": category}}
         )
 
-        context_docs = [match.metadata.get("text", "") for match in results.matches]
+        context_docs = [
+            strip_html(match.metadata.get("text", ""))[:10000]  # Limit each doc to ~10,000 characters (~2,000 words)
+            for match in results.matches
+        ]
         print("DEBUG: context_docs", context_docs)
-        context_text = "\n\n---\n\n".join(context_docs)
 
+        context_text = "\n\n---\n\n".join(context_docs)
 
         system_prompt = "You are an expert addiction recovery assistant."
         user_prompt = f"""Use the following recovery stories to answer the question.
