@@ -92,7 +92,6 @@ def rag_answer():
         encoding = tiktoken.encoding_for_model("gpt-4")
         total_tokens = sum(len(encoding.encode(doc)) for doc in context_docs)
         print("DEBUG: total_tokens =", total_tokens)
-        print("DEBUG: context_docs =", context_docs)
 
         context_text = "\n\n---\n\n".join(context_docs)
 
@@ -111,13 +110,17 @@ Answer:"""
                 {"role": "user", "content": user_prompt}
             ]
         )
-        answer = response.choices[0].message.content
+        answer = response.choices[0].message.content.replace("—", ", ")
         return jsonify({"answer": answer})
     except Exception as e:
         import traceback
         traceback_str = traceback.format_exc()
         print("ERROR during OpenAI ChatCompletion:", traceback_str)
-        return jsonify({"error": "RAG processing failed", "details": str(e), "traceback": traceback_str}), 500
+        return jsonify({
+            "error": "RAG processing failed",
+            "details": str(e),
+            "traceback": traceback_str
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
