@@ -30,7 +30,7 @@ def search_stories():
         return jsonify({"error": "Missing query or category"}), 400
 
     try:
-        embedding_response = openai.embeddings.create(
+        embedding_response = client.embeddings.create(
             input=query,
             model="text-embedding-ada-002"
         )
@@ -68,7 +68,7 @@ def rag_answer():
         return jsonify({"error": "Missing query or category"}), 400
 
     try:
-        embedding_response = openai.embeddings.create(
+        embedding_response = client.embeddings.create(
             input=query,
             model="text-embedding-ada-002"
         )
@@ -104,7 +104,6 @@ def rag_answer():
 Question: {query}
 Answer:"""
 
-            try:
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -119,10 +118,7 @@ Answer:"""
         traceback_str = traceback.format_exc()
         print("ERROR during OpenAI ChatCompletion:", traceback_str)
         return jsonify({"error": "RAG processing failed", "details": str(e), "traceback": traceback_str}), 500
-    except Exception as e:
-        return jsonify({"error": "RAG processing failed", "details": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
