@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 from pinecone import Pinecone
 import openai
 import os
+from flask_cors import CORS
+CORS(app)
 from dotenv import load_dotenv
 
 load_dotenv()
