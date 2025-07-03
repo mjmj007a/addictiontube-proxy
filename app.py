@@ -4,6 +4,7 @@ from pinecone import Pinecone
 import openai
 import os
 import re
+import tiktoken
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -84,10 +85,14 @@ def rag_answer():
         )
 
         context_docs = [
-            strip_html(match.metadata.get("text", ""))[:10000]  # Limit each doc to ~10,000 characters (~2,000 words)
+            strip_html(match.metadata.get("text", ""))[:3000]
             for match in results.matches
         ]
-        print("DEBUG: context_docs", context_docs)
+
+        encoding = tiktoken.encoding_for_model("gpt-4")
+        total_tokens = sum(len(encoding.encode(doc)) for doc in context_docs)
+        print("DEBUG: total_tokens =", total_tokens)
+        print("DEBUG: context_docs =", context_docs)
 
         context_text = "\n\n---\n\n".join(context_docs)
 
@@ -114,3 +119,4 @@ Answer:"""
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
+
