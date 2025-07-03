@@ -104,6 +104,7 @@ def rag_answer():
 Question: {query}
 Answer:"""
 
+        try:
         completion = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
@@ -111,12 +112,17 @@ Answer:"""
                 {"role": "user", "content": user_prompt}
             ]
         )
-
         answer = completion['choices'][0]['message']['content']
         return jsonify({"answer": answer})
+    except Exception as e:
+        import traceback
+        traceback_str = traceback.format_exc()
+        print("ERROR during OpenAI ChatCompletion:", traceback_str)
+        return jsonify({"error": "RAG processing failed", "details": str(e), "traceback": traceback_str}), 500
     except Exception as e:
         return jsonify({"error": "RAG processing failed", "details": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
 
