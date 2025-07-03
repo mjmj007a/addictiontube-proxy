@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pinecone import Pinecone
-import openai
+from openai import OpenAI
 import os
 import re
 import tiktoken
@@ -12,7 +12,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI()
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("addictiontube-index")
 
@@ -105,14 +105,14 @@ Question: {query}
 Answer:"""
 
         try:
-        completion = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
         )
-        answer = completion['choices'][0]['message']['content']
+        answer = response.choices[0].message.content
         return jsonify({"answer": answer})
     except Exception as e:
         import traceback
