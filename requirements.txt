@@ -4,3 +4,4 @@ openai
 python-dotenv
 gunicorn
 flask-cors
+tiktoken
