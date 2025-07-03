@@ -80,7 +80,9 @@ def rag_answer():
         )
 
         context_docs = [match.metadata.get("text", "") for match in results.matches]
+        print("DEBUG: context_docs", context_docs)
         context_text = "\n\n---\n\n".join(context_docs)
+
 
         system_prompt = "You are an expert addiction recovery assistant."
         user_prompt = f"""Use the following recovery stories to answer the question.
