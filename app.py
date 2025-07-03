@@ -104,7 +104,7 @@ def rag_answer():
 Question: {query}
 Answer:"""
 
-        try:
+            try:
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
