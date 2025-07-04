@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pinecone import Pinecone
-from openai import OpenAI
+import openai
 import os
 import re
 import tiktoken
@@ -12,7 +12,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-client = OpenAI()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("addictiontube-index")
 
@@ -35,11 +35,11 @@ def search_stories():
         return jsonify({"error": "Missing query or category"}), 400
 
     try:
-        embedding_response = client.embeddings.create(
+        embedding_response = openai.Embedding.create(
             input=query,
             model="text-embedding-ada-002"
         )
-        query_embedding = embedding_response.data[0].embedding
+        query_embedding = embedding_response['data'][0]['embedding']
     except Exception as e:
         return jsonify({"error": "OpenAI embedding failed", "details": str(e)}), 500
 
@@ -48,7 +48,7 @@ def search_stories():
             vector=query_embedding,
             top_k=100,
             include_metadata=True,
-            filter={"category": {"$eq": category}}  # set to None for no filter
+            filter={"category": {"$eq": category}}
         )
         total = len(results.matches)
         start = (page - 1) * size
@@ -82,11 +82,11 @@ def rag_answer():
         return jsonify({"error": "Missing query or category"}), 400
 
     try:
-        embedding_response = client.embeddings.create(
+        embedding_response = openai.Embedding.create(
             input=query,
             model="text-embedding-ada-002"
         )
-        query_embedding = embedding_response.data[0].embedding
+        query_embedding = embedding_response['data'][0]['embedding']
     except Exception as e:
         return jsonify({"error": "Embedding failed", "details": str(e)}), 500
 
@@ -117,14 +117,14 @@ def rag_answer():
 Question: {query}
 Answer:"""
 
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
         )
-        answer = response.choices[0].message.content.replace("—", ", ")
+        answer = response['choices'][0]['message']['content'].replace("—", ", ")
         return jsonify({"answer": answer})
     except Exception as e:
         import traceback
