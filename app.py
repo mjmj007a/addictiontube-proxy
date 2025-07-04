@@ -53,8 +53,8 @@ def search_stories():
             "id": m.id,
             "score": m.score,
             "title": m.metadata.get("title", "N/A"),
-            "description": m.metadata.get("description", "")
-            "image": m.metadata.get("image", "")  # ← ADD THIS LINE
+            "description": m.metadata.get("description", ""),
+            "image": m.metadata.get("image", "")
         } for m in paginated]
         return jsonify({"results": stories, "total": total})
     except Exception as e:
