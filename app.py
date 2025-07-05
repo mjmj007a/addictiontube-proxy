@@ -27,7 +27,12 @@ logger.addHandler(handler)
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": ["https://addictiontube.com", "http://addictiontube.com"]}})
 
-client = OpenAI(timeout=30)
+try:
+    client = OpenAI(timeout=30)
+except Exception as e:
+    logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+    raise
+
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("addictiontube-index")
 
