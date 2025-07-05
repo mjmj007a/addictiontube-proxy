@@ -5,34 +5,46 @@ from openai import OpenAI
 import os
 import re
 import tiktoken
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = Flask(__name__)
-CORS(app)
+# Validate environment variables
+required_env = ["PINECONE_API_KEY", "OPENAI_API_KEY"]
+for var in required_env:
+    if not os.getenv(var):
+        raise EnvironmentError(f"Missing environment variable: {var}")
 
-client = OpenAI()
+# Configure logging
+logging.basicConfig(
+    filename='story_image_debug.log',
+    level=logging.DEBUG,
+    format='%(asctime)s %(message)s',
+    filemode='a',
+    maxBytes=10485760,  # 10MB
+    backupCount=5
+)
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": ["https://addictiontube.com"]}})
+
+client = OpenAI(timeout=30)
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("addictiontube-index")
 
 def strip_html(text):
     return re.sub(r'<[^>]+>', '', text or '')
 
-def log_debug(message):
-    print(message)
-    with open("story_image_debug_202507050209.log", "a", encoding="utf-8") as f:
-        f.write(message + "\n")
-
 @app.route('/search_stories', methods=['GET'])
 def search_stories():
-    query = request.args.get('q', '')
+    query = re.sub(r'[^\w\s.,!?]', '', request.args.get('q', '')).strip()
     category = request.args.get('category', '')
-    page = int(request.args.get('page', 1))
-    size = int(request.args.get('per_page', 5))
+    page = max(1, int(request.args.get('page', 1)))
+    size = max(1, min(100, int(request.args.get('per_page', 5))))
 
-    if not query or not category:
-        return jsonify({"error": "Missing query or category"}), 400
+    if not query or not category or category not in ['1028', '1042']:
+        return jsonify({"error": "Invalid or missing query or category"}), 400
 
     try:
         embedding_response = client.embeddings.create(
@@ -41,12 +53,14 @@ def search_stories():
         )
         query_embedding = embedding_response.data[0].embedding
     except Exception as e:
-        return jsonify({"error": "OpenAI embedding failed", "details": str(e)}), 500
+        logging.error(f"OpenAI embedding failed: {str(e)}")
+        return jsonify({"error": "Embedding service unavailable"}), 500
 
     try:
+        top_k = min(100, size * page)
         results = index.query(
             vector=query_embedding,
-            top_k=100,
+            top_k=top_k,
             include_metadata=True,
             filter={"category": {"$eq": category}}
         )
@@ -60,20 +74,22 @@ def search_stories():
             stories.append({
                 "id": m.id,
                 "score": m.score,
-                "title": m.metadata.get("title", "N/A"),
-                "description": m.metadata.get("description", "")
+                "title": strip_html(m.metadata.get("title", "N/A")),
+                "description": strip_html(m.metadata.get("description", "")),
+                "image": m.metadata.get("image", "")
             })
         return jsonify({"results": stories, "total": total})
     except Exception as e:
-        return jsonify({"error": "Pinecone query failed", "details": str(e)}), 500
+        logging.error(f"Pinecone query failed: {str(e)}")
+        return jsonify({"error": "Search service unavailable"}), 500
 
 @app.route('/rag_answer', methods=['GET'])
 def rag_answer():
-    query = request.args.get('q', '')
+    query = re.sub(r'[^\w\s.,!?]', '', request.args.get('q', '')).strip()
     category = request.args.get('category', '')
 
-    if not query or not category:
-        return jsonify({"error": "Missing query or category"}), 400
+    if not query or not category or category not in ['1028', '1042']:
+        return jsonify({"error": "Invalid or missing query or category"}), 400
 
     try:
         embedding_response = client.embeddings.create(
@@ -82,7 +98,8 @@ def rag_answer():
         )
         query_embedding = embedding_response.data[0].embedding
     except Exception as e:
-        return jsonify({"error": "Embedding failed", "details": str(e)}), 500
+        logging.error(f"Embedding failed: {str(e)}")
+        return jsonify({"error": "Embedding service unavailable"}), 500
 
     try:
         results = index.query(
@@ -92,15 +109,20 @@ def rag_answer():
             filter={"category": {"$eq": category}}
         )
 
-        context_docs = [
-            strip_html(match.metadata.get("text", ""))[:3000]
-            for match in results.matches
-        ]
-
         encoding = tiktoken.encoding_for_model("gpt-4")
-        total_tokens = sum(len(encoding.encode(doc)) for doc in context_docs)
-        log_debug(f"DEBUG: total_tokens = {total_tokens}")
+        max_tokens = 16384 - 1000  # Reserve 1000 tokens for prompt/response
+        context_docs = []
+        total_tokens = 0
+        for match in results.matches:
+            doc = strip_html(match.metadata.get("text", ""))[:3000]
+            doc_tokens = len(encoding.encode(doc))
+            if total_tokens + doc_tokens <= max_tokens:
+                context_docs.append(doc)
+                total_tokens += doc_tokens
+            else:
+                break
 
+        logging.debug(f"Total tokens: {total_tokens}")
         context_text = "\n\n---\n\n".join(context_docs)
 
         system_prompt = "You are an expert addiction recovery assistant."
@@ -118,17 +140,11 @@ Answer:"""
                 {"role": "user", "content": user_prompt}
             ]
         )
-        answer = response.choices[0].message.content.replace("—", ", ")
+        answer = response.choices[0].message.content
         return jsonify({"answer": answer})
     except Exception as e:
-        import traceback
-        traceback_str = traceback.format_exc()
-        log_debug("ERROR during OpenAI ChatCompletion:\n" + traceback_str)
-        return jsonify({
-            "error": "RAG processing failed",
-            "details": str(e),
-            "traceback": traceback_str
-        }), 500
+        logging.error(f"RAG processing failed: {str(e)}")
+        return jsonify({"error": "AI answer service unavailable"}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
