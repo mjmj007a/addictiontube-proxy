@@ -48,7 +48,7 @@ def search_stories():
             vector=query_embedding,
             top_k=100,
             include_metadata=True,
-            filter={"category": {"$eq": category}}  # set to None for no filter
+            filter={"category": {"$eq": category}}
         )
         total = len(results.matches)
         start = (page - 1) * size
@@ -57,18 +57,12 @@ def search_stories():
 
         stories = []
         for m in paginated:
-            img = m.metadata.get("image", "")
-            if img and not img.startswith("http"):
-                img = "https://addictiontube.com/" + img.lstrip("/")
-            log_debug(f"ID {m.id} → {img}")
             stories.append({
                 "id": m.id,
                 "score": m.score,
                 "title": m.metadata.get("title", "N/A"),
-                "description": m.metadata.get("description", ""),
-                "image": img
+                "description": m.metadata.get("description", "")
             })
-
         return jsonify({"results": stories, "total": total})
     except Exception as e:
         return jsonify({"error": "Pinecone query failed", "details": str(e)}), 500
