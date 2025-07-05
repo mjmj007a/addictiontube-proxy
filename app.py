@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pinecone import Pinecone
-import openai
+from openai import OpenAI
 import os
 import re
 import tiktoken
@@ -12,17 +12,12 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI()
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("addictiontube-index")
 
 def strip_html(text):
     return re.sub(r'<[^>]+>', '', text or '')
-
-def log_debug(message):
-    print(message)
-    with open("story_image_debug.log", "a", encoding="utf-8") as f:
-        f.write(message + "\n")
 
 @app.route('/search_stories', methods=['GET'])
 def search_stories():
@@ -35,11 +30,11 @@ def search_stories():
         return jsonify({"error": "Missing query or category"}), 400
 
     try:
-        embedding_response = openai.Embedding.create(
+        embedding_response = client.embeddings.create(
             input=query,
             model="text-embedding-ada-002"
         )
-        query_embedding = embedding_response['data'][0]['embedding']
+        query_embedding = embedding_response.data[0].embedding
     except Exception as e:
         return jsonify({"error": "OpenAI embedding failed", "details": str(e)}), 500
 
@@ -54,21 +49,12 @@ def search_stories():
         start = (page - 1) * size
         end = start + size
         paginated = results.matches[start:end]
-
-        stories = []
-        for m in paginated:
-            img = m.metadata.get("image", "")
-            if img and not img.startswith("http"):
-                img = "https://addictiontube.com/" + img.lstrip("/")
-            log_debug(f"ID {m.id} → {img}")
-            stories.append({
-                "id": m.id,
-                "score": m.score,
-                "title": m.metadata.get("title", "N/A"),
-                "description": m.metadata.get("description", ""),
-                "image": img
-            })
-
+        stories = [{
+            "id": m.id,
+            "score": m.score,
+            "title": m.metadata.get("title", "N/A"),
+            "description": m.metadata.get("description", "")
+        } for m in paginated]
         return jsonify({"results": stories, "total": total})
     except Exception as e:
         return jsonify({"error": "Pinecone query failed", "details": str(e)}), 500
@@ -82,11 +68,11 @@ def rag_answer():
         return jsonify({"error": "Missing query or category"}), 400
 
     try:
-        embedding_response = openai.Embedding.create(
+        embedding_response = client.embeddings.create(
             input=query,
             model="text-embedding-ada-002"
         )
-        query_embedding = embedding_response['data'][0]['embedding']
+        query_embedding = embedding_response.data[0].embedding
     except Exception as e:
         return jsonify({"error": "Embedding failed", "details": str(e)}), 500
 
@@ -105,7 +91,8 @@ def rag_answer():
 
         encoding = tiktoken.encoding_for_model("gpt-4")
         total_tokens = sum(len(encoding.encode(doc)) for doc in context_docs)
-        log_debug(f"DEBUG: total_tokens = {total_tokens}")
+        print("DEBUG: total_tokens =", total_tokens)
+        print("DEBUG: context_docs =", context_docs)
 
         context_text = "\n\n---\n\n".join(context_docs)
 
@@ -117,26 +104,21 @@ def rag_answer():
 Question: {query}
 Answer:"""
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
         )
-        answer = response['choices'][0]['message']['content'].replace("—", ", ")
+        answer = response.choices[0].message.content
         return jsonify({"answer": answer})
     except Exception as e:
         import traceback
         traceback_str = traceback.format_exc()
-        log_debug("ERROR during OpenAI ChatCompletion:\n" + traceback_str)
-        return jsonify({
-            "error": "RAG processing failed",
-            "details": str(e),
-            "traceback": traceback_str
-        }), 500
+        print("ERROR during OpenAI ChatCompletion:", traceback_str)
+        return jsonify({"error": "RAG processing failed", "details": str(e), "traceback": traceback_str}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
