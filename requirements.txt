@@ -1,7 +1,7 @@
-flask
-pinecone
-openai
-python-dotenv
-gunicorn
-flask-cors
-tiktoken
+flask==2.3.3
+pinecone==5.0.1
+openai==1.35.13
+python-dotenv==1.0.1
+gunicorn==22.0.0
+flask-cors==4.0.1
+tiktoken==0.7.0

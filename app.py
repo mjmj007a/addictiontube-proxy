@@ -6,6 +6,7 @@ import os
 import re
 import tiktoken
 import logging
+from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,18 +17,15 @@ for var in required_env:
     if not os.getenv(var):
         raise EnvironmentError(f"Missing environment variable: {var}")
 
-# Configure logging
-logging.basicConfig(
-    filename='story_image_debug.log',
-    level=logging.DEBUG,
-    format='%(asctime)s %(message)s',
-    filemode='a',
-    maxBytes=10485760,  # 10MB
-    backupCount=5
-)
+# Configure logging with rotation
+logger = logging.getLogger('addictiontube')
+logger.setLevel(logging.DEBUG)
+handler = RotatingFileHandler('story_image_debug.log', maxBytes=10485760, backupCount=5)
+handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
+logger.addHandler(handler)
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["https://addictiontube.com"]}})
+CORS(app, resources={r"/*": {"origins": ["https://addictiontube.com", "http://addictiontube.com"]}})
 
 client = OpenAI(timeout=30)
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -53,7 +51,7 @@ def search_stories():
         )
         query_embedding = embedding_response.data[0].embedding
     except Exception as e:
-        logging.error(f"OpenAI embedding failed: {str(e)}")
+        logger.error(f"OpenAI embedding failed: {str(e)}")
         return jsonify({"error": "Embedding service unavailable"}), 500
 
     try:
@@ -80,7 +78,7 @@ def search_stories():
             })
         return jsonify({"results": stories, "total": total})
     except Exception as e:
-        logging.error(f"Pinecone query failed: {str(e)}")
+        logger.error(f"Pinecone query failed: {str(e)}")
         return jsonify({"error": "Search service unavailable"}), 500
 
 @app.route('/rag_answer', methods=['GET'])
@@ -98,7 +96,7 @@ def rag_answer():
         )
         query_embedding = embedding_response.data[0].embedding
     except Exception as e:
-        logging.error(f"Embedding failed: {str(e)}")
+        logger.error(f"Embedding failed: {str(e)}")
         return jsonify({"error": "Embedding service unavailable"}), 500
 
     try:
@@ -122,7 +120,7 @@ def rag_answer():
             else:
                 break
 
-        logging.debug(f"Total tokens: {total_tokens}")
+        logger.debug(f"Total tokens: {total_tokens}")
         context_text = "\n\n---\n\n".join(context_docs)
 
         system_prompt = "You are an expert addiction recovery assistant."
@@ -143,7 +141,7 @@ Answer:"""
         answer = response.choices[0].message.content
         return jsonify({"answer": answer})
     except Exception as e:
-        logging.error(f"RAG processing failed: {str(e)}")
+        logger.error(f"RAG processing failed: {str(e)}")
         return jsonify({"error": "AI answer service unavailable"}), 500
 
 if __name__ == '__main__':
