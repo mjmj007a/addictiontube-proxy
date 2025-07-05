@@ -21,7 +21,7 @@ def strip_html(text):
 
 def log_debug(message):
     print(message)
-    with open("story_image_debug.log", "a", encoding="utf-8") as f:
+    with open("story_image_debug_202507050209.log", "a", encoding="utf-8") as f:
         f.write(message + "\n")
 
 @app.route('/search_stories', methods=['GET'])
