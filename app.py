@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import openai
 from pinecone import Pinecone
+import openai
 import os
 import re
 import tiktoken
@@ -19,7 +19,12 @@ index = pc.Index("addictiontube-index")
 def strip_html(text):
     return re.sub(r'<[^>]+>', '', text or '')
 
-@app.route('/api/search', methods=['GET'])
+def log_debug(message):
+    print(message)
+    with open("story_image_debug.log", "a", encoding="utf-8") as f:
+        f.write(message + "\n")
+
+@app.route('/search_stories', methods=['GET'])
 def search_stories():
     query = request.args.get('q', '')
     category = request.args.get('category', '')
@@ -30,39 +35,45 @@ def search_stories():
         return jsonify({"error": "Missing query or category"}), 400
 
     try:
-        embedding = openai.Embedding.create(
+        embedding_response = openai.Embedding.create(
             input=query,
             model="text-embedding-ada-002"
-        )['data'][0]['embedding']
+        )
+        query_embedding = embedding_response['data'][0]['embedding']
+    except Exception as e:
+        return jsonify({"error": "OpenAI embedding failed", "details": str(e)}), 500
 
+    try:
         results = index.query(
-            vector=embedding,
+            vector=query_embedding,
             top_k=100,
             include_metadata=True,
             filter={"category": {"$eq": category}}
         )
-
-        matches = results.matches
-        paginated = matches[(page-1)*size : page*size]
+        total = len(results.matches)
+        start = (page - 1) * size
+        end = start + size
+        paginated = results.matches[start:end]
 
         stories = []
         for m in paginated:
             img = m.metadata.get("image", "")
             if img and not img.startswith("http"):
                 img = "https://addictiontube.com/" + img.lstrip("/")
+            log_debug(f"ID {m.id} → {img}")
             stories.append({
                 "id": m.id,
                 "score": m.score,
-                "title": m.metadata.get("title", ""),
+                "title": m.metadata.get("title", "N/A"),
                 "description": m.metadata.get("description", ""),
                 "image": img
             })
 
-        return jsonify({"results": stories, "total": len(matches)})
+        return jsonify({"results": stories, "total": total})
     except Exception as e:
-        return jsonify({"error": "Search failed", "details": str(e)}), 500
+        return jsonify({"error": "Pinecone query failed", "details": str(e)}), 500
 
-@app.route('/api/answer', methods=['GET'])
+@app.route('/rag_answer', methods=['GET'])
 def rag_answer():
     query = request.args.get('q', '')
     category = request.args.get('category', '')
@@ -71,31 +82,37 @@ def rag_answer():
         return jsonify({"error": "Missing query or category"}), 400
 
     try:
-        embedding = openai.Embedding.create(
+        embedding_response = openai.Embedding.create(
             input=query,
             model="text-embedding-ada-002"
-        )['data'][0]['embedding']
+        )
+        query_embedding = embedding_response['data'][0]['embedding']
+    except Exception as e:
+        return jsonify({"error": "Embedding failed", "details": str(e)}), 500
 
+    try:
         results = index.query(
-            vector=embedding,
+            vector=query_embedding,
             top_k=5,
             include_metadata=True,
             filter={"category": {"$eq": category}}
         )
 
         context_docs = [
-            strip_html(m.metadata.get("text", ""))[:3000]
-            for m in results.matches
+            strip_html(match.metadata.get("text", ""))[:3000]
+            for match in results.matches
         ]
 
         encoding = tiktoken.encoding_for_model("gpt-4")
         total_tokens = sum(len(encoding.encode(doc)) for doc in context_docs)
-        print(f"[DEBUG] Context tokens: {total_tokens}")
+        log_debug(f"DEBUG: total_tokens = {total_tokens}")
 
-        context_block = "\n\n---\n\n".join(context_docs)
-        user_prompt = f"""Use the following recovery stories to answer the question:
+        context_text = "\n\n---\n\n".join(context_docs)
 
-{context_block}
+        system_prompt = "You are an expert addiction recovery assistant."
+        user_prompt = f"""Use the following recovery stories to answer the question.
+
+{context_text}
 
 Question: {query}
 Answer:"""
@@ -103,14 +120,23 @@ Answer:"""
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are an expert addiction recovery assistant."},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
         )
         answer = response['choices'][0]['message']['content'].replace("—", ", ")
         return jsonify({"answer": answer})
     except Exception as e:
-        return jsonify({"error": "RAG failed", "details": str(e)}), 500
+        import traceback
+        traceback_str = traceback.format_exc()
+        log_debug("ERROR during OpenAI ChatCompletion:\n" + traceback_str)
+        return jsonify({
+            "error": "RAG processing failed",
+            "details": str(e),
+            "traceback": traceback_str
+        }), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+
