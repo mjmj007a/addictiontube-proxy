@@ -4,7 +4,6 @@ from pinecone import Pinecone
 from openai import OpenAI
 import os
 import re
-import tiktoken
 import logging
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
@@ -17,7 +16,7 @@ for var in required_env:
     if not os.getenv(var):
         raise EnvironmentError(f"Missing environment variable: {var}")
 
-# Configure logging with rotation
+# Configure logging
 logger = logging.getLogger('addictiontube')
 logger.setLevel(logging.DEBUG)
 handler = RotatingFileHandler('story_image_debug.log', maxBytes=10485760, backupCount=5)
@@ -35,6 +34,12 @@ except Exception as e:
 
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("addictiontube-index")
+
+try:
+    import tiktoken
+    tiktoken_available = True
+except ImportError:
+    tiktoken_available = False
 
 def strip_html(text):
     return re.sub(r'<[^>]+>', '', text or '')
@@ -88,6 +93,9 @@ def search_stories():
 
 @app.route('/rag_answer', methods=['GET'])
 def rag_answer():
+    if not tiktoken_available:
+        return jsonify({"error": "AI answer service unavailable due to missing tiktoken"}), 503
+
     query = re.sub(r'[^\w\s.,!?]', '', request.args.get('q', '')).strip()
     category = request.args.get('category', '')
 
@@ -113,11 +121,11 @@ def rag_answer():
         )
 
         encoding = tiktoken.encoding_for_model("gpt-4")
-        max_tokens = 16384 - 1000  # Reserve 1000 tokens for prompt/response
+        max_tokens = 16384 - 1000
         context_docs = []
         total_tokens = 0
         for match in results.matches:
-            doc = strip_html(match.metadata.get("text", ""))[:3000]
+            doc = strip_html(m.metadata.get("text", ""))[:3000]
             doc_tokens = len(encoding.encode(doc))
             if total_tokens + doc_tokens <= max_tokens:
                 context_docs.append(doc)
