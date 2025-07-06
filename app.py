@@ -68,17 +68,27 @@ def search_stories():
         return jsonify({"error": "Embedding service unavailable"}), 500
 
     try:
-        top_k = min(100, size * page)
+        # Get total count first
+        total_results = index.query(
+            vector=query_embedding,
+            top_k=1000,  # Large enough to estimate total
+            include_values=False,
+            include_metadata=False,
+            filter={"category": {"$eq": category}}
+        )
+        total = len(total_results.matches)
+
+        # Fetch paginated results
+        top_k = min(100, size * page)  # Limit per query
         results = index.query(
             vector=query_embedding,
             top_k=top_k,
             include_metadata=True,
             filter={"category": {"$eq": category}}
         )
-        total = len(results.matches)
         start = (page - 1) * size
-        end = start + size
-        paginated = results.matches[start:end]
+        end = min(start + size, top_k)
+        paginated = results.matches[start:end] if start < len(results.matches) else []
 
         stories = []
         for m in paginated:
@@ -126,7 +136,7 @@ def rag_answer():
         if not results.matches:
             return jsonify({"error": "No relevant context found"}), 404
 
-        encoding = tiktoken.get_encoding("cl100k_base")  # Compatible with tiktoken 0.9.0
+        encoding = tiktoken.get_encoding("cl100k_base")
         max_tokens = 16384 - 1000
         context_docs = []
         total_tokens = 0
