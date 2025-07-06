@@ -28,6 +28,7 @@ CORS(app, resources={r"/*": {"origins": ["https://addictiontube.com", "http://ad
 
 try:
     client = OpenAI(timeout=30)
+    logger.info("OpenAI client initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize OpenAI client: {str(e)}")
     raise
@@ -38,8 +39,10 @@ index = pc.Index("addictiontube-index")
 try:
     import tiktoken
     tiktoken_available = True
+    logger.info("tiktoken imported successfully")
 except ImportError:
     tiktoken_available = False
+    logger.error("tiktoken import failed")
 
 def strip_html(text):
     return re.sub(r'<[^>]+>', '', text or '')
@@ -120,18 +123,28 @@ def rag_answer():
             filter={"category": {"$eq": category}}
         )
 
-        encoding = tiktoken.encoding_for_model("gpt-4")
+        if not results.matches:
+            return jsonify({"error": "No relevant context found"}), 404
+
+        encoding = tiktoken.get_encoding("cl100k_base")  # Compatible with tiktoken 0.9.0
         max_tokens = 16384 - 1000
         context_docs = []
         total_tokens = 0
         for match in results.matches:
-            doc = strip_html(m.metadata.get("text", ""))[:3000]
+            text = match.metadata.get("text", "")
+            if not text:
+                logger.warning(f"Match {match.id} has no text metadata")
+                continue
+            doc = strip_html(text)[:3000]
             doc_tokens = len(encoding.encode(doc))
             if total_tokens + doc_tokens <= max_tokens:
                 context_docs.append(doc)
                 total_tokens += doc_tokens
             else:
                 break
+
+        if not context_docs:
+            return jsonify({"error": "No usable context data found"}), 404
 
         logger.debug(f"Total tokens: {total_tokens}")
         context_text = "\n\n---\n\n".join(context_docs)
@@ -149,13 +162,20 @@ Answer:"""
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
-            ]
+            ],
+            max_tokens=1000
         )
         answer = response.choices[0].message.content
         return jsonify({"answer": answer})
+    except openai.OpenAIError as e:
+        logger.error(f"OpenAI error in rag_answer: {str(e)}")
+        return jsonify({"error": f"OpenAI error: {str(e)}"}), 500
+    except pinecone.PineconeException as e:
+        logger.error(f"Pinecone error in rag_answer: {str(e)}")
+        return jsonify({"error": f"Pinecone error: {str(e)}"}), 500
     except Exception as e:
         logger.error(f"RAG processing failed: {str(e)}")
-        return jsonify({"error": "AI answer service unavailable"}), 500
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
