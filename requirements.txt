@@ -4,5 +4,5 @@ openai==1.35.13
 python-dotenv==1.0.1
 gunicorn==22.0.0
 flask-cors==4.0.1
-tiktoken==0.7.0
 httpx==0.27.0
+tiktoken==0.6.0 ; python_version < '3.13'  # Compatible with Python 3.12
