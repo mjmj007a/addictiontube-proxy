@@ -52,7 +52,7 @@ def search_stories():
     query = re.sub(r'[^\w\s.,!?]', '', request.args.get('q', '')).strip()
     category = request.args.get('category', '')
     page = max(1, int(request.args.get('page', 1)))
-    size = max(1, min(100, int(request.args.get('per_page', 5))))
+    size = max(1, min(100, int(request.args.get('per_page', 5))))  # Default to 5, cap at 100
 
     if not query or not category or category not in ['1028', '1042']:
         return jsonify({"error": "Invalid or missing query or category"}), 400
@@ -79,7 +79,7 @@ def search_stories():
         total = len(total_results.matches)
 
         # Fetch paginated results
-        top_k = min(100, size * page)  # Limit per query
+        top_k = min(100, size * page)  # Limit per query to 100
         results = index.query(
             vector=query_embedding,
             top_k=top_k,
@@ -87,8 +87,10 @@ def search_stories():
             filter={"category": {"$eq": category}}
         )
         start = (page - 1) * size
-        end = min(start + size, top_k)
+        end = min(start + size, len(results.matches))  # Ensure end doesn't exceed available matches
         paginated = results.matches[start:end] if start < len(results.matches) else []
+
+        logger.debug(f"Page: {page}, Size: {size}, Start: {start}, End: {end}, Total: {total}, Matches: {len(results.matches)}")
 
         stories = []
         for m in paginated:
