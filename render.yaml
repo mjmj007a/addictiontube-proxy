@@ -1,9 +1,20 @@
+pre_build:
+  - pip install --upgrade pip
+build:
+  python_version: "3.12"
+  command: |
+    mkdir -p $HOME/.cargo
+    pip install --no-cache-dir -r requirements.txt
+start:
+  cmd: gunicorn app:app
+envVars:
+  - key: OPENAI_API_KEY
+    value: "your_openai_api_key_here"  # Replace with actual key
+  - key: PINECONE_API_KEY
+    value: "your_pinecone_api_key_here"  # Replace with actual key
 services:
   - type: web
     name: addictiontube-proxy
     runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
-    envVars:
-      - key: OPENAI_API_KEY
-      - key: PINECONE_API_KEY
+    buildCommand: ${build.command}
+    startCommand: ${start.cmd}
