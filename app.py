@@ -7,6 +7,7 @@ import re
 import logging
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
+import random
 
 load_dotenv()
 
@@ -52,7 +53,7 @@ def search_stories():
     query = re.sub(r'[^\w\s.,!?]', '', request.args.get('q', '')).strip()
     category = request.args.get('category', '')
     page = max(1, int(request.args.get('page', 1)))
-    size = max(1, min(100, int(request.args.get('per_page', 5))))  # Default to 5, cap at 100
+    size = max(1, min(100, int(request.args.get('per_page', 5))))
 
     if not query or not category or category not in ['1028', '1042']:
         return jsonify({"error": "Invalid or missing query or category"}), 400
@@ -68,18 +69,16 @@ def search_stories():
         return jsonify({"error": "Embedding service unavailable"}), 500
 
     try:
-        # Get total count first
         total_results = index.query(
             vector=query_embedding,
-            top_k=1000,  # Large enough to estimate total
+            top_k=1000,
             include_values=False,
             include_metadata=False,
             filter={"category": {"$eq": category}}
         )
         total = len(total_results.matches)
 
-        # Fetch paginated results
-        top_k = min(100, size * page)  # Limit per query to 100
+        top_k = min(100, size * page)
         results = index.query(
             vector=query_embedding,
             top_k=top_k,
@@ -87,7 +86,7 @@ def search_stories():
             filter={"category": {"$eq": category}}
         )
         start = (page - 1) * size
-        end = min(start + size, len(results.matches))  # Ensure end doesn't exceed available matches
+        end = min(start + size, len(results.matches))
         paginated = results.matches[start:end] if start < len(results.matches) else []
 
         logger.debug(f"Page: {page}, Size: {size}, Start: {start}, End: {end}, Total: {total}, Matches: {len(results.matches)}")
@@ -113,6 +112,7 @@ def rag_answer():
 
     query = re.sub(r'[^\w\s.,!?]', '', request.args.get('q', '')).strip()
     category = request.args.get('category', '')
+    reroll = request.args.get('reroll', '').lower() == 'yes'
 
     if not query or not category or category not in ['1028', '1042']:
         return jsonify({"error": "Invalid or missing query or category"}), 400
@@ -135,14 +135,18 @@ def rag_answer():
             filter={"category": {"$eq": category}}
         )
 
-        if not results.matches:
+        matches = results.matches
+        if reroll:
+            random.shuffle(matches)
+
+        if not matches:
             return jsonify({"error": "No relevant context found"}), 404
 
         encoding = tiktoken.get_encoding("cl100k_base")
         max_tokens = 16384 - 1000
         context_docs = []
         total_tokens = 0
-        for match in results.matches:
+        for match in matches:
             text = match.metadata.get("text", "")
             if not text:
                 logger.warning(f"Match {match.id} has no text metadata")
@@ -162,12 +166,7 @@ def rag_answer():
         context_text = "\n\n---\n\n".join(context_docs)
 
         system_prompt = "You are an expert addiction recovery assistant."
-        user_prompt = f"""Use the following recovery stories to answer the question.
-
-{context_text}
-
-Question: {query}
-Answer:"""
+        user_prompt = f"""Use the following recovery stories to answer the question.\n\n{context_text}\n\nQuestion: {query}\nAnswer:"""
 
         response = client.chat.completions.create(
             model="gpt-4",
